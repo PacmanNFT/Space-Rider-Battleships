@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-<title>Riders V VOV</title>
+<title>Pixel Galaga</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
@@ -115,20 +115,20 @@ canvas {
 }
 #controls {
   position: absolute;
-  bottom: 10px;
+  bottom: 18px;
   left: 0; right: 0;
   display: flex;
   justify-content: space-between;
-  padding: 0 14px;
-  z-index: 15;
+  padding: 0 20px;
+  z-index: 20;
   pointer-events: none;
 }
 .ctrl-btn {
-  width: 60px;
-  height: 60px;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
-  background: rgba(0,70,150,0.5);
-  border: 2px solid rgba(0,170,255,0.55);
+  background: rgba(0,70,150,0.55);
+  border: 2px solid rgba(0,170,255,0.6);
   color: #fff;
   font-size: 26px;
   display: flex;
@@ -138,30 +138,56 @@ canvas {
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
+  box-shadow: 0 0 12px rgba(0,150,255,0.25);
 }
 .ctrl-btn:active, .ctrl-btn.active {
-  background: rgba(0,130,240,0.75);
-  transform: scale(0.9);
+  background: rgba(0,130,240,0.8);
+  transform: scale(0.92);
 }
 #shoot-btn {
-  width: 68px;
-  height: 68px;
-  background: rgba(160,30,30,0.55);
+  width: 76px;
+  height: 76px;
+  background: rgba(180,30,30,0.65);
   border-color: #f55;
-  font-size: 24px;
+  font-size: 28px;
+  margin-left: auto;
 }
 #shoot-btn:active, #shoot-btn.active {
-  background: rgba(230,50,50,0.8);
+  background: rgba(240,50,50,0.9);
 }
 #forward-btn {
+  width: 56px;
+  height: 50px;
+  border-radius: 12px;
+  font-size: 20px;
+}
+/* Full-width drag zone at the bottom for phone movement */
+#move-zone {
   position: absolute;
-  bottom: 82px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 42%;
+  z-index: 12;
+  pointer-events: auto;
+  touch-action: none;
+  background: transparent;
+}
+#move-hint {
+  position: absolute;
+  bottom: 110px;
   left: 50%;
   transform: translateX(-50%);
-  width: 54px;
-  height: 46px;
-  border-radius: 10px;
-  font-size: 18px;
+  font-size: 11px;
+  color: rgba(150,200,255,0.45);
+  letter-spacing: 2px;
+  pointer-events: none;
+  z-index: 13;
+  text-shadow: 0 0 8px rgba(0,100,200,0.5);
+  transition: opacity 0.4s;
+}
+#move-hint.fading {
+  opacity: 0;
 }
 .hidden { display: none !important; }
 #highscore { color: #fd0; margin-top: 8px; font-size: 0.9em; }
@@ -177,7 +203,7 @@ canvas {
     <div id="lives-box">LIVES <span id="lives">3</span></div>
   </div>
   <div id="start-screen">
-    <h1>RIDERS V VOV</h1>
+    <h1>PIXEL GALAGA</h1>
     <div class="subtitle">Dodge • Dive • Destroy</div>
     <div class="ship-preview">
       <img id="prev-player" alt="P">
@@ -189,11 +215,11 @@ canvas {
     <button class="btn" id="start-btn">START GAME</button>
     <div id="highscore">HI-SCORE: 0</div>
     <div id="instructions">
-      ← → Move &nbsp;|&nbsp; ↑ Jump Forward (1 step)<br>
-      SPACE / ● Button = Shoot<br>
+      PHONE: Drag bottom of screen to move<br>
+      ● Button = Shoot &nbsp;|&nbsp; ▲ = Jump Forward<br>
+      DESKTOP: Arrow keys / WASD + Space<br>
       Front rows = 1 hit • Deeper rows take more hits<br>
-      Divers fly off bottom then return from top<br>
-      Max 5 bombs at once — find the safe lanes!
+      Divers fly off bottom → re-enter from top
     </div>
   </div>
   <div id="gameover-screen" class="hidden">
@@ -204,11 +230,11 @@ canvas {
     <button class="btn secondary" id="menu-btn">MENU</button>
   </div>
   <div id="controls" class="hidden">
-    <div class="ctrl-btn" id="left-btn">◀</div>
     <div class="ctrl-btn" id="forward-btn">▲</div>
     <div class="ctrl-btn" id="shoot-btn">●</div>
-    <div class="ctrl-btn" id="right-btn">▶</div>
   </div>
+  <div id="move-zone" class="hidden"></div>
+  <div id="move-hint" class="hidden">DRAG TO MOVE</div>
 </div>
 <script>
 
@@ -266,7 +292,9 @@ const player = {
   h: 48,
   speed: 4.5,
   isForward: false,
-  invuln: 0
+  invuln: 0,
+  targetX: W / 2,   // for drag-to-move on phone
+  usingTouch: false
 };
 
 let bullets = [];
@@ -425,8 +453,22 @@ function update(dt) {
   });
 
   // Player movement
-  if (keys.left) player.x -= player.speed;
-  if (keys.right) player.x += player.speed;
+  // Keyboard
+  if (keys.left) {
+    player.x -= player.speed;
+    player.usingTouch = false;
+  }
+  if (keys.right) {
+    player.x += player.speed;
+    player.usingTouch = false;
+  }
+
+  // Touch / drag follow
+  if (player.usingTouch) {
+    // Smoothly follow the finger
+    player.x += (player.targetX - player.x) * 0.35;
+  }
+
   player.x = Math.max(player.w / 2 + 6, Math.min(W - player.w / 2 - 6, player.x));
 
   // One-step forward jump (hold to stay)
@@ -738,6 +780,7 @@ window.addEventListener("keyup", e => {
 
 function bindBtn(id, key) {
   const el = document.getElementById(id);
+  if (!el) return;
   const set = (v) => {
     keys[key] = v;
     if (v) el.classList.add("active"); else el.classList.remove("active");
@@ -745,14 +788,80 @@ function bindBtn(id, key) {
   el.addEventListener("touchstart", e => { e.preventDefault(); set(true); }, { passive: false });
   el.addEventListener("touchend", e => { e.preventDefault(); set(false); }, { passive: false });
   el.addEventListener("touchcancel", () => set(false));
-  el.addEventListener("mousedown", () => set(true));
+  el.addEventListener("mousedown", e => { e.preventDefault(); set(true); });
   el.addEventListener("mouseup", () => set(false));
   el.addEventListener("mouseleave", () => set(false));
 }
-bindBtn("left-btn", "left");
-bindBtn("right-btn", "right");
 bindBtn("forward-btn", "up");
 bindBtn("shoot-btn", "shoot");
+
+// ===== PHONE / TOUCH DRAG-TO-MOVE =====
+const moveZone = document.getElementById("move-zone");
+const moveHint = document.getElementById("move-hint");
+let hintHidden = false;
+
+function canvasXFromEvent(e) {
+  const rect = canvas.getBoundingClientRect();
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  // Map from screen to canvas coordinate
+  return ((clientX - rect.left) / rect.width) * W;
+}
+
+function onMoveStart(e) {
+  if (state !== "playing") return;
+  e.preventDefault();
+  player.usingTouch = true;
+  player.targetX = canvasXFromEvent(e);
+  if (!hintHidden && moveHint) {
+    moveHint.classList.add("fading");
+    hintHidden = true;
+  }
+}
+
+function onMove(e) {
+  if (state !== "playing" || !player.usingTouch) return;
+  e.preventDefault();
+  player.targetX = canvasXFromEvent(e);
+}
+
+function onMoveEnd(e) {
+  player.usingTouch = false;
+}
+
+if (moveZone) {
+  moveZone.addEventListener("touchstart", onMoveStart, { passive: false });
+  moveZone.addEventListener("touchmove", onMove, { passive: false });
+  moveZone.addEventListener("touchend", onMoveEnd, { passive: false });
+  moveZone.addEventListener("touchcancel", onMoveEnd, { passive: false });
+
+  // Also support mouse drag for testing on desktop
+  moveZone.addEventListener("mousedown", onMoveStart);
+  window.addEventListener("mousemove", (e) => {
+    if (player.usingTouch && e.buttons === 1) onMove(e);
+  });
+  window.addEventListener("mouseup", onMoveEnd);
+}
+
+// Show / hide the move zone with the rest of the UI
+const originalStartGame = startGame;
+startGame = function() {
+  originalStartGame();
+  if (moveZone) moveZone.classList.remove("hidden");
+  if (moveHint) {
+    moveHint.classList.remove("hidden");
+    moveHint.classList.remove("fading");
+    hintHidden = false;
+  }
+};
+window.startGame = startGame;
+
+const originalEndGame = endGame;
+endGame = function() {
+  originalEndGame();
+  if (moveZone) moveZone.classList.add("hidden");
+  if (moveHint) moveHint.classList.add("hidden");
+};
+window.endGame = endGame;
 
 document.getElementById("start-btn").addEventListener("click", startGame);
 document.getElementById("retry-btn").addEventListener("click", startGame);
@@ -761,6 +870,8 @@ document.getElementById("menu-btn").addEventListener("click", () => {
   document.getElementById("gameover-screen").classList.add("hidden");
   document.getElementById("start-screen").classList.remove("hidden");
   document.getElementById("highscore").textContent = "HI-SCORE: " + highScore;
+  if (moveZone) moveZone.classList.add("hidden");
+  if (moveHint) moveHint.classList.add("hidden");
 });
 
 document.addEventListener("contextmenu", e => e.preventDefault());
