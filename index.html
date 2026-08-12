@@ -235,11 +235,11 @@ canvas {
 <script>
 
 const IMG_SRC = {
-  player: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABaCAIAAADIG8SkAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGYktHRAD/AP8A/6C9p5MAAAAHdElNRQfqCAwIJTTG+RPXAAAIC3pUWHRSYXc[...]",
-  enemy1: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAABQCAIAAAABc2X6AAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGYktHRAD/AP8A/6C9p5MAAAAHdElNRQfqCAwIJTWx/iNBAAAIC3pUWHRSYXc[...]",
-  enemy2: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAABQCAIAAAABc2X6AAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGYktHRAD/AP8A/6C9p5MAAAAHdElNRQfqCAwIJTYo93L7AAAID3pUWHRSYXc[...]",
-  enemy3: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAABQCAIAAAABc2X6AAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGYktHRAD/AP8A/6C9p5MAAAAHdElNRQfqCAwIJTYo93L7AAAID3pUWHRSYXc[...]",
-  enemy4: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAABQCAIAAAABc2X6AAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGYktHRAD/AP8A/6C9p5MAAAAHdElNRQfqCAwIJTdf8EJtAAAIEXpUWHRSYXc[...]"
+  player: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABaCAIAAADIG8SkAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGYktHRAD/AP8A/6C9p5MAAAAHdElNRQfqCAwIJTTG+RPXAAAIC3pUWHRSYXc[...]
+  enemy1: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAABQCAIAAAABc2X6AAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGYktHRAD/AP8A/6C9p5MAAAAHdElNRQfqCAwIJTWx/iNBAAAIC3pUWHRSYXc[...]
+  enemy2: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAABQCAIAAAABc2X6AAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGYktHRAD/AP8A/6C9p5MAAAAHdElNRQfqCAwIJTYo93L7AAAID3pUWHRSYXc[...]
+  enemy3: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAABQCAIAAAABc2X6AAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGYktHRAD/AP8A/6C9p5MAAAAHdElNRQfqCAwIJTYo93L7AAAID3pUWHRSYXc[...]
+  enemy4: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAABQCAIAAAABc2X6AAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGYktHRAD/AP8A/6C9p5MAAAAHdElNRQfqCAwIJTdf8EJtAAAIEXpUWHRSYXc[...]
 };
 
 
@@ -278,6 +278,11 @@ let stars = [];
 let particles = [];
 let frame = 0;
 const MAX_BOMBS = 5; // hard cap so there is always a safe lane
+
+// Formation movement state
+let formationX = 0;
+let formationVx = 2.2; // pixels per frame
+const FORMATION_PADDING = 80; // distance from edges before reversing
 
 const player = {
   x: W / 2,
@@ -333,6 +338,8 @@ function initStars() {
 
 function spawnEnemies() {
   enemies = [];
+  formationX = 0; // reset formation position
+  
   LAYER_DEFS.forEach((layer, layerIdx) => {
     const totalWidth = (layer.count - 1) * layer.spacing;
     const startX = (W - totalWidth) / 2;
@@ -499,8 +506,33 @@ function update(dt) {
     return b.y > -25;
   });
 
-  // ===== ENEMY AI =====
+  // ===== FORMATION MOVEMENT (synchronized horizontal sweep) =====
   const formationEnemies = enemies.filter(e => e.alive && e.state === "formation");
+  
+  if (formationEnemies.length > 0) {
+    // Update formation position
+    formationX += formationVx;
+    
+    // Calculate formation bounds to detect edge
+    const allHomeX = formationEnemies.map(e => e.homeX);
+    const minHome = Math.min(...allHomeX);
+    const maxHome = Math.max(...allHomeX);
+    const formationWidth = maxHome - minHome;
+    
+    const leftBound = minHome + formationX;
+    const rightBound = maxHome + formationX;
+    
+    // Reverse direction at edges
+    if (leftBound < FORMATION_PADDING) {
+      formationX = FORMATION_PADDING - minHome;
+      formationVx = Math.abs(formationVx);
+    } else if (rightBound > W - FORMATION_PADDING) {
+      formationX = W - FORMATION_PADDING - maxHome;
+      formationVx = -Math.abs(formationVx);
+    }
+  }
+
+  // ===== ENEMY AI =====
   diveTimer--;
 
   if (diveTimer <= 0 && formationEnemies.length > 0) {
@@ -527,9 +559,9 @@ function update(dt) {
     if (e.flash > 0) e.flash--;
 
     if (e.state === "formation") {
-      // Gentle bobbing
-      e.x = e.homeX + Math.sin(frame * 0.025 + e.homeX * 0.02) * 5;
-      e.y = e.homeY + Math.sin(frame * 0.035 + e.homeY * 0.03) * 3.5;
+      // Position offset by formation sweep + gentle bobbing
+      e.x = e.homeX + formationX + Math.sin(frame * 0.025 + e.homeX * 0.02) * 3;
+      e.y = e.homeY + Math.sin(frame * 0.035 + e.homeY * 0.03) * 2;
       e.bombCd--;
       // Only drop if under bomb limit and random chance
       if (e.bombCd <= 0 && bombs.length < MAX_BOMBS && Math.random() < 0.008 + wave * 0.0015) {
@@ -552,7 +584,7 @@ function update(dt) {
       if (e.y > H + 40) {
         e.state = "offscreen";
         e.diveT = 0;
-        e.x = e.homeX + (Math.random() - 0.5) * 60; // slight random entry
+        e.x = e.homeX + formationX + (Math.random() - 0.5) * 60; // slight random entry
         e.y = -50;
       }
     }
@@ -572,12 +604,13 @@ function update(dt) {
       const t = Math.min(1, e.diveT);
       // Ease out
       const ease = 1 - Math.pow(1 - t, 2.5);
-      e.x = e.retStartX + (e.homeX - e.retStartX) * ease;
+      const targetFormX = e.homeX + formationX;
+      e.x = e.retStartX + (targetFormX - e.retStartX) * ease;
       e.y = e.retStartY + (e.homeY - e.retStartY) * ease;
       e.angle *= 0.92;
       if (t >= 1) {
         e.state = "formation";
-        e.x = e.homeX;
+        e.x = e.homeX + formationX;
         e.y = e.homeY;
         e.angle = 0;
       }
