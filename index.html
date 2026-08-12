@@ -167,7 +167,7 @@ canvas {
   left: 0;
   right: 0;
   bottom: 0;
-  height: 42%;
+  height: 48%;
   z-index: 12;
   pointer-events: auto;
   touch-action: none;
@@ -175,7 +175,7 @@ canvas {
 }
 #move-hint {
   position: absolute;
-  bottom: 110px;
+  bottom: 100px;
   left: 50%;
   transform: translateX(-50%);
   font-size: 11px;
@@ -203,7 +203,7 @@ canvas {
     <div id="lives-box">LIVES <span id="lives">3</span></div>
   </div>
   <div id="start-screen">
-    <h1>Riders V VOV</h1>
+    <h1>PIXEL GALAGA</h1>
     <div class="subtitle">Dodge • Dive • Destroy</div>
     <div class="ship-preview">
       <img id="prev-player" alt="P">
@@ -215,8 +215,8 @@ canvas {
     <button class="btn" id="start-btn">START GAME</button>
     <div id="highscore">HI-SCORE: 0</div>
     <div id="instructions">
-      PHONE: Drag bottom of screen to move<br>
-      ● Button = Shoot &nbsp;|&nbsp; ▲ = Jump Forward<br>
+      PHONE: Touch & drag bottom of screen to move<br>
+      Hold finger = Auto Fire • Slide up = Jump Forward<br>
       DESKTOP: Arrow keys / WASD + Space<br>
       Front rows = 1 hit • Deeper rows take more hits<br>
       Divers fly off bottom → re-enter from top
@@ -229,12 +229,8 @@ canvas {
     <button class="btn" id="retry-btn">PLAY AGAIN</button>
     <button class="btn secondary" id="menu-btn">MENU</button>
   </div>
-  <div id="controls" class="hidden">
-    <div class="ctrl-btn" id="forward-btn">▲</div>
-    <div class="ctrl-btn" id="shoot-btn">●</div>
-  </div>
   <div id="move-zone" class="hidden"></div>
-  <div id="move-hint" class="hidden">DRAG TO MOVE</div>
+  <div id="move-hint" class="hidden">TOUCH & DRAG TO MOVE • AUTO FIRE</div>
 </div>
 <script>
 
@@ -294,7 +290,8 @@ const player = {
   isForward: false,
   invuln: 0,
   targetX: W / 2,   // for drag-to-move on phone
-  usingTouch: false
+  usingTouch: false,
+  touchForward: false
 };
 
 let bullets = [];
@@ -453,7 +450,7 @@ function update(dt) {
   });
 
   // Player movement
-  // Keyboard
+  // Keyboard (desktop)
   if (keys.left) {
     player.x -= player.speed;
     player.usingTouch = false;
@@ -465,21 +462,21 @@ function update(dt) {
 
   // Touch / drag follow
   if (player.usingTouch) {
-    // Smoothly follow the finger
-    player.x += (player.targetX - player.x) * 0.35;
+    player.x += (player.targetX - player.x) * 0.38;
   }
 
   player.x = Math.max(player.w / 2 + 6, Math.min(W - player.w / 2 - 6, player.x));
 
-  // One-step forward jump (hold to stay)
-  const targetY = keys.up ? player.forwardY : player.baseY;
-  player.isForward = keys.up;
+  // Forward position: keyboard up OR touch is high enough on screen
+  const wantForward = keys.up || (player.usingTouch && player.touchForward);
+  const targetY = wantForward ? player.forwardY : player.baseY;
+  player.isForward = wantForward;
   player.y += (targetY - player.y) * 0.28;
 
   if (player.invuln > 0) player.invuln--;
 
-  // Shoot
-  if (keys.shoot && frame - lastShot > 12) {
+  // Auto-fire while touching (or keyboard space)
+  if ((keys.shoot || player.usingTouch) && frame - lastShot > 11) {
     bullets.push({
       x: player.x,
       y: player.y - player.h / 2 - 4,
@@ -792,26 +789,27 @@ function bindBtn(id, key) {
   el.addEventListener("mouseup", () => set(false));
   el.addEventListener("mouseleave", () => set(false));
 }
-bindBtn("forward-btn", "up");
-bindBtn("shoot-btn", "shoot");
-
-// ===== PHONE / TOUCH DRAG-TO-MOVE =====
+// ===== PHONE / TOUCH DRAG-TO-MOVE + AUTO FIRE =====
 const moveZone = document.getElementById("move-zone");
 const moveHint = document.getElementById("move-hint");
 let hintHidden = false;
 
-function canvasXFromEvent(e) {
+function getTouchPos(e) {
   const rect = canvas.getBoundingClientRect();
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  // Map from screen to canvas coordinate
-  return ((clientX - rect.left) / rect.width) * W;
+  const t = e.touches ? e.touches[0] : e;
+  const x = ((t.clientX - rect.left) / rect.width) * W;
+  const y = ((t.clientY - rect.top) / rect.height) * H;
+  return { x, y };
 }
 
 function onMoveStart(e) {
   if (state !== "playing") return;
   e.preventDefault();
   player.usingTouch = true;
-  player.targetX = canvasXFromEvent(e);
+  const pos = getTouchPos(e);
+  player.targetX = pos.x;
+  // If finger is in the upper part of the move zone → go forward
+  player.touchForward = pos.y < H * 0.72;
   if (!hintHidden && moveHint) {
     moveHint.classList.add("fading");
     hintHidden = true;
@@ -821,11 +819,15 @@ function onMoveStart(e) {
 function onMove(e) {
   if (state !== "playing" || !player.usingTouch) return;
   e.preventDefault();
-  player.targetX = canvasXFromEvent(e);
+  const pos = getTouchPos(e);
+  player.targetX = pos.x;
+  // Slide finger higher = ship moves forward
+  player.touchForward = pos.y < H * 0.72;
 }
 
 function onMoveEnd(e) {
   player.usingTouch = false;
+  player.touchForward = false;
 }
 
 if (moveZone) {
@@ -834,7 +836,7 @@ if (moveZone) {
   moveZone.addEventListener("touchend", onMoveEnd, { passive: false });
   moveZone.addEventListener("touchcancel", onMoveEnd, { passive: false });
 
-  // Also support mouse drag for testing on desktop
+  // Mouse support for desktop testing
   moveZone.addEventListener("mousedown", onMoveStart);
   window.addEventListener("mousemove", (e) => {
     if (player.usingTouch && e.buttons === 1) onMove(e);
